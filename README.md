@@ -1,6 +1,6 @@
 # DL24P Plot Data For Single Cell
 
-A data visualization tool for the ATORCH DL24P battery tester. This project processes CSV files containing battery cell discharge data and generates informative plots showing voltage vs. discharge capacity and discharge capacity vs. time relationships.
+A data visualization tool for the ATORCH DL24P battery tester. This project processes CSV files obtained from this [repository](https://github.com/Jay2k1/Electronic_load_DL24.git) containing battery cell discharge data and generates informative plots showing voltage vs. discharge capacity and discharge capacity vs. time relationships.
 
 ## Features
 
