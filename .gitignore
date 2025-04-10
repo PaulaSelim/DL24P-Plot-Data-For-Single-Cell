@@ -1,1 +1,18 @@
-/Cell x_raw_20250410_175144.csv
+# Ignore all CSV data files
+*.csv
+
+# Ignore all PNG image files
+*.png
+
+# Ignore the plots directory containing generated images
+plots/
+
+# Python related
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+.venv
+env/
+venv/
+ENV/
