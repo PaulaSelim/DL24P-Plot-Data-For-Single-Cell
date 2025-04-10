@@ -247,8 +247,7 @@ def plot_temperature_vs_time(discharge_df: pd.DataFrame) -> None:
     # Smooth the data with moving average and resampling
     x_smoothed, y_smoothed = apply_moving_average(x_time, y_temperature)
     
-    # Use a higher sampling rate (10% instead of the default 1%) for temperature plot
-    x_sampled, y_sampled = resample_data(x_smoothed, y_smoothed, factor=0.0001)
+    x_sampled, y_sampled = resample_data(x_smoothed, y_smoothed)
 
     plt.figure(figsize=(10, 6))
     plt.plot(x_sampled, y_sampled, "g-", linewidth=2)
