@@ -13,7 +13,7 @@ from scipy.interpolate import make_interp_spline
 load_dotenv()
 
 # Global configuration variables (configurable via environment variables)
-CSV_FILENAME: str = os.getenv("CSV_FILENAME", "Cell x_raw_20250410_175144.csv")
+CSV_FILENAME: str = os.getenv("CSV_FILENAME", "1A.csv")
 PLOT_DIRECTORY: str = os.getenv("PLOT_DIRECTORY", "plots")
 MOVING_AVERAGE_DEFAULT_WINDOW: int = int(os.getenv("MOVING_AVERAGE_DEFAULT_WINDOW", "15"))
 RESAMPLE_REDUCTION_FACTOR: float = float(os.getenv("RESAMPLE_REDUCTION_FACTOR", "0.01"))
@@ -233,6 +233,57 @@ def plot_capacity_vs_time(discharge_df: pd.DataFrame) -> None:
     logging.info("Saved Capacity vs Time plot to %s", plot_path)
 
 
+def plot_temperature_vs_time(discharge_df: pd.DataFrame) -> None:
+    """Generates and saves a plot of temperature versus time in seconds.
+
+    Args:
+        discharge_df: DataFrame containing discharge data with 'time_seconds' and 'temperature'.
+    """
+    logging.info("Generating Temperature vs Time plot.")
+
+    x_time: np.ndarray = discharge_df["time_seconds"].values
+    y_temperature: np.ndarray = discharge_df["temp"].values
+
+    # Smooth the data with moving average and resampling
+    x_smoothed, y_smoothed = apply_moving_average(x_time, y_temperature)
+    
+    # Use a higher sampling rate (10% instead of the default 1%) for temperature plot
+    x_sampled, y_sampled = resample_data(x_smoothed, y_smoothed, factor=0.0001)
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(x_sampled, y_sampled, "g-", linewidth=2)
+
+    # Identify extremum points
+    max_index: int = int(np.argmax(y_sampled))
+    min_index: int = int(np.argmin(y_sampled))
+
+    plt.plot(x_sampled[max_index], y_sampled[max_index], "ro", markersize=8)
+    plt.plot(x_sampled[min_index], y_sampled[min_index], "bo", markersize=8)
+
+    plt.annotate(
+        f"Max: ({x_sampled[max_index]:.0f}s, {y_sampled[max_index]:.2f}°C)",
+        xy=(x_sampled[max_index], y_sampled[max_index]),
+        xytext=(x_sampled[max_index] - 100, y_sampled[max_index] + 0.5),
+        bbox=dict(boxstyle="round,pad=0.3", fc="yellow", alpha=0.7),
+    )
+    plt.annotate(
+        f"Min: ({x_sampled[min_index]:.0f}s, {y_sampled[min_index]:.2f}°C)",
+        xy=(x_sampled[min_index], y_sampled[min_index]),
+        xytext=(x_sampled[min_index] + 100, y_sampled[min_index] - 0.5),
+        bbox=dict(boxstyle="round,pad=0.3", fc="yellow", alpha=0.7),
+    )
+
+    plt.xlabel("Time (seconds)", fontsize=12)
+    plt.ylabel("Temperature (°C)", fontsize=12)
+    plt.title("Temperature vs Time", fontsize=14)
+    plt.grid(True)
+    plt.tight_layout()
+
+    plot_path: str = os.path.join(PLOT_DIRECTORY, "temperature_vs_time.png")
+    plt.savefig(plot_path, dpi=300)
+    logging.info("Saved Temperature vs Time plot to %s", plot_path)
+
+
 def read_csv_data(filename: str) -> pd.DataFrame:
     """Reads CSV data into a DataFrame.
 
@@ -280,6 +331,7 @@ def main() -> None:
     # Generate plots
     plot_voltage_vs_capacity(discharge_df)
     plot_capacity_vs_time(discharge_df)
+    plot_temperature_vs_time(discharge_df)
 
     # Display plots to the user
     plt.show()
