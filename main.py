@@ -13,11 +13,12 @@ from scipy.interpolate import make_interp_spline
 load_dotenv()
 
 # Global configuration variables (configurable via environment variables)
-CSV_FILENAME: str = os.getenv("CSV_FILENAME", "1A.csv")
+CSV_FILENAME: str = os.getenv("CSV_FILENAME", "0.5A.csv")
 PLOT_DIRECTORY: str = os.getenv("PLOT_DIRECTORY", "plots")
 MOVING_AVERAGE_DEFAULT_WINDOW: int = int(os.getenv("MOVING_AVERAGE_DEFAULT_WINDOW", "15"))
 RESAMPLE_REDUCTION_FACTOR: float = float(os.getenv("RESAMPLE_REDUCTION_FACTOR", "0.01"))
 SMOOTH_CURVE_POINTS: int = int(os.getenv("SMOOTH_CURVE_POINTS", "1000"))
+BATTERY_CAPACITY_AH: float = float(os.getenv("BATTERY_CAPACITY_AH", "2.5"))  # Default battery capacity in Ah
 
 # Configure logging for detailed execution tracing
 logging.basicConfig(
@@ -135,11 +136,12 @@ def ensure_plot_directory(directory: str = PLOT_DIRECTORY) -> None:
         logging.debug("Plot directory already exists: %s", directory)
 
 
-def plot_voltage_vs_capacity(discharge_df: pd.DataFrame) -> None:
+def plot_voltage_vs_capacity(discharge_df: pd.DataFrame, ax=None) -> None:
     """Generates and saves a plot of voltage versus discharge capacity.
 
     Args:
         discharge_df: DataFrame containing discharge data with 'cap_ah' and 'voltage'.
+        ax: Matplotlib axis for plotting. If None, a new figure is created.
     """
     logging.info("Generating Voltage vs Discharge Capacity plot.")
 
@@ -150,45 +152,49 @@ def plot_voltage_vs_capacity(discharge_df: pd.DataFrame) -> None:
     x_smoothed, y_smoothed = apply_moving_average(x_capacity, y_voltage)
     x_sampled, y_sampled = resample_data(x_smoothed, y_smoothed)
 
-    plt.figure(figsize=(10, 6))
-    plt.plot(x_sampled, y_sampled, "b-", linewidth=2)
+    # Create new figure if no axis provided
+    if ax is None:
+        plt.figure(figsize=(10, 6))
+        ax = plt.gca()
+    
+    ax.plot(x_sampled, y_sampled, "b-", linewidth=2)
 
     # Identify extremum points
     max_index: int = int(np.argmax(y_sampled))
     min_index: int = int(np.argmin(y_sampled))
 
-    plt.plot(x_sampled[max_index], y_sampled[max_index], "ro", markersize=8)
-    plt.plot(x_sampled[min_index], y_sampled[min_index], "go", markersize=8)
+    ax.plot(x_sampled[max_index], y_sampled[max_index], "ro", markersize=8)
+    ax.plot(x_sampled[min_index], y_sampled[min_index], "go", markersize=8)
 
-    plt.annotate(
+    ax.annotate(
         f"Min: ({x_sampled[max_index]:.2f}Ah, {y_sampled[max_index]:.2f}V)",
         xy=(x_sampled[max_index], y_sampled[max_index]),
         xytext=(x_sampled[max_index] - 0.1, y_sampled[max_index] + 0.05),
         bbox=dict(boxstyle="round,pad=0.3", fc="yellow", alpha=0.7),
     )
-    plt.annotate(
+    ax.annotate(
         f"Max: ({x_sampled[min_index]:.2f}Ah, {y_sampled[min_index]:.2f}V)",
         xy=(x_sampled[min_index], y_sampled[min_index]),
         xytext=(x_sampled[min_index] + 0.1, y_sampled[min_index] - 0.05),
         bbox=dict(boxstyle="round,pad=0.3", fc="yellow", alpha=0.7),
     )
 
-    plt.xlabel("Discharge Capacity (Ah)", fontsize=12)
-    plt.ylabel("Voltage (V)", fontsize=12)
-    plt.title("Voltage vs Discharge Capacity", fontsize=14)
-    plt.grid(True)
-    plt.tight_layout()
+    ax.set_xlabel("Discharge Capacity (Ah)", fontsize=12)
+    ax.set_ylabel("Voltage (V)", fontsize=12)
+    ax.set_title("Voltage vs Discharge Capacity", fontsize=14)
+    ax.grid(True)
 
     plot_path: str = os.path.join(PLOT_DIRECTORY, "voltage_vs_capacity.png")
     plt.savefig(plot_path, dpi=300)
     logging.info("Saved Voltage vs Capacity plot to %s", plot_path)
 
 
-def plot_capacity_vs_time(discharge_df: pd.DataFrame) -> None:
+def plot_capacity_vs_time(discharge_df: pd.DataFrame, ax=None) -> None:
     """Generates and saves a plot of discharge capacity versus time in seconds.
 
     Args:
         discharge_df: DataFrame containing discharge data with 'time_seconds' and 'cap_ah'.
+        ax: Matplotlib axis for plotting. If None, a new figure is created.
     """
     logging.info("Generating Discharge Capacity vs Time plot.")
 
@@ -199,45 +205,49 @@ def plot_capacity_vs_time(discharge_df: pd.DataFrame) -> None:
     x_smoothed, y_smoothed = apply_moving_average(x_time, y_capacity)
     x_sampled, y_sampled = resample_data(x_smoothed, y_smoothed)
 
-    plt.figure(figsize=(10, 6))
-    plt.plot(x_sampled, y_sampled, "r-", linewidth=2)
+    # Create new figure if no axis provided
+    if ax is None:
+        plt.figure(figsize=(10, 6))
+        ax = plt.gca()
+    
+    ax.plot(x_sampled, y_sampled, "r-", linewidth=2)
 
     # Identify extremum points
     max_index: int = int(np.argmax(y_sampled))
     min_index: int = int(np.argmin(y_sampled))
 
-    plt.plot(x_sampled[max_index], y_sampled[max_index], "bo", markersize=8)
-    plt.plot(x_sampled[min_index], y_sampled[min_index], "go", markersize=8)
+    ax.plot(x_sampled[max_index], y_sampled[max_index], "bo", markersize=8)
+    ax.plot(x_sampled[min_index], y_sampled[min_index], "go", markersize=8)
 
-    plt.annotate(
+    ax.annotate(
         f"Max: ({x_sampled[max_index]:.0f}s, {y_sampled[max_index]:.2f}Ah)",
         xy=(x_sampled[max_index], y_sampled[max_index]),
         xytext=(x_sampled[max_index] - 100, y_sampled[max_index] + 0.05),
         bbox=dict(boxstyle="round,pad=0.3", fc="yellow", alpha=0.7),
     )
-    plt.annotate(
+    ax.annotate(
         f"Min: ({x_sampled[min_index]:.0f}s, {y_sampled[min_index]:.2f}Ah)",
         xy=(x_sampled[min_index], y_sampled[min_index]),
         xytext=(x_sampled[min_index] + 100, y_sampled[min_index] - 0.05),
         bbox=dict(boxstyle="round,pad=0.3", fc="yellow", alpha=0.7),
     )
 
-    plt.xlabel("Time (seconds)", fontsize=12)
-    plt.ylabel("Discharge Capacity (Ah)", fontsize=12)
-    plt.title("Discharge Capacity vs Time", fontsize=14)
-    plt.grid(True)
-    plt.tight_layout()
+    ax.set_xlabel("Time (seconds)", fontsize=12)
+    ax.set_ylabel("Discharge Capacity (Ah)", fontsize=12)
+    ax.set_title("Discharge Capacity vs Time", fontsize=14)
+    ax.grid(True)
 
     plot_path: str = os.path.join(PLOT_DIRECTORY, "capacity_vs_time.png")
     plt.savefig(plot_path, dpi=300)
     logging.info("Saved Capacity vs Time plot to %s", plot_path)
 
 
-def plot_temperature_vs_time(discharge_df: pd.DataFrame) -> None:
+def plot_temperature_vs_time(discharge_df: pd.DataFrame, ax=None) -> None:
     """Generates and saves a plot of temperature versus time in seconds.
 
     Args:
         discharge_df: DataFrame containing discharge data with 'time_seconds' and 'temperature'.
+        ax: Matplotlib axis for plotting. If None, a new figure is created.
     """
     logging.info("Generating Temperature vs Time plot.")
 
@@ -246,41 +256,97 @@ def plot_temperature_vs_time(discharge_df: pd.DataFrame) -> None:
 
     # Smooth the data with moving average and resampling
     x_smoothed, y_smoothed = apply_moving_average(x_time, y_temperature)
-    
     x_sampled, y_sampled = resample_data(x_smoothed, y_smoothed)
 
-    plt.figure(figsize=(10, 6))
-    plt.plot(x_sampled, y_sampled, "g-", linewidth=2)
+    # Create new figure if no axis provided
+    if ax is None:
+        plt.figure(figsize=(10, 6))
+        ax = plt.gca()
+    
+    ax.plot(x_sampled, y_sampled, "g-", linewidth=2)
 
     # Identify extremum points
     max_index: int = int(np.argmax(y_sampled))
     min_index: int = int(np.argmin(y_sampled))
 
-    plt.plot(x_sampled[max_index], y_sampled[max_index], "ro", markersize=8)
-    plt.plot(x_sampled[min_index], y_sampled[min_index], "bo", markersize=8)
+    ax.plot(x_sampled[max_index], y_sampled[max_index], "ro", markersize=8)
+    ax.plot(x_sampled[min_index], y_sampled[min_index], "bo", markersize=8)
 
-    plt.annotate(
+    ax.annotate(
         f"Max: ({x_sampled[max_index]:.0f}s, {y_sampled[max_index]:.2f}°C)",
         xy=(x_sampled[max_index], y_sampled[max_index]),
         xytext=(x_sampled[max_index] - 100, y_sampled[max_index] + 0.5),
         bbox=dict(boxstyle="round,pad=0.3", fc="yellow", alpha=0.7),
     )
-    plt.annotate(
+    ax.annotate(
         f"Min: ({x_sampled[min_index]:.0f}s, {y_sampled[min_index]:.2f}°C)",
         xy=(x_sampled[min_index], y_sampled[min_index]),
         xytext=(x_sampled[min_index] + 100, y_sampled[min_index] - 0.5),
         bbox=dict(boxstyle="round,pad=0.3", fc="yellow", alpha=0.7),
     )
 
-    plt.xlabel("Time (seconds)", fontsize=12)
-    plt.ylabel("Temperature (°C)", fontsize=12)
-    plt.title("Temperature vs Time", fontsize=14)
-    plt.grid(True)
-    plt.tight_layout()
+    ax.set_xlabel("Time (seconds)", fontsize=12)
+    ax.set_ylabel("Temperature (°C)", fontsize=12)
+    ax.set_title("Temperature vs Time", fontsize=14)
+    ax.grid(True)
 
     plot_path: str = os.path.join(PLOT_DIRECTORY, "temperature_vs_time.png")
     plt.savefig(plot_path, dpi=300)
     logging.info("Saved Temperature vs Time plot to %s", plot_path)
+
+
+def plot_soc_vs_time(discharge_df: pd.DataFrame, ax=None) -> None:
+    """Generates and saves a plot of State of Charge (SoC) versus time in seconds.
+
+    Args:
+        discharge_df: DataFrame containing discharge data with 'time_seconds' and 'cap_ah'.
+        ax: Matplotlib axis for plotting. If None, a new figure is created.
+    """
+    logging.info("Generating State of Charge vs Time plot.")
+
+    x_time: np.ndarray = discharge_df["time_seconds"].values
+    # Calculate SoC as percentage: (current charge / total capacity) * 100
+    y_soc: np.ndarray = (1 - (discharge_df["cap_ah"].values / BATTERY_CAPACITY_AH)) * 100
+
+    # Smooth the data with moving average and resampling
+    x_smoothed, y_smoothed = apply_moving_average(x_time, y_soc)
+    x_sampled, y_sampled = resample_data(x_smoothed, y_smoothed)
+
+    # Create new figure if no axis provided
+    if ax is None:
+        plt.figure(figsize=(10, 6))
+        ax = plt.gca()
+    
+    ax.plot(x_sampled, y_sampled, "m-", linewidth=2)
+
+    # Identify extremum points
+    max_index: int = int(np.argmax(y_sampled))
+    min_index: int = int(np.argmin(y_sampled))
+
+    ax.plot(x_sampled[max_index], y_sampled[max_index], "bo", markersize=8)
+    ax.plot(x_sampled[min_index], y_sampled[min_index], "go", markersize=8)
+
+    ax.annotate(
+        f"Max: ({x_sampled[max_index]:.0f}s, {y_sampled[max_index]:.1f}%)",
+        xy=(x_sampled[max_index], y_sampled[max_index]),
+        xytext=(x_sampled[max_index] - 100, y_sampled[max_index] + 2),
+        bbox=dict(boxstyle="round,pad=0.3", fc="yellow", alpha=0.7),
+    )
+    ax.annotate(
+        f"Min: ({x_sampled[min_index]:.0f}s, {y_sampled[min_index]:.1f}%)",
+        xy=(x_sampled[min_index], y_sampled[min_index]),
+        xytext=(x_sampled[min_index] + 100, y_sampled[min_index] - 2),
+        bbox=dict(boxstyle="round,pad=0.3", fc="yellow", alpha=0.7),
+    )
+
+    ax.set_xlabel("Time (seconds)", fontsize=12)
+    ax.set_ylabel("State of Charge (%)", fontsize=12)
+    ax.set_title("Battery State of Charge vs Time", fontsize=14)
+    ax.grid(True)
+
+    plot_path: str = os.path.join(PLOT_DIRECTORY, "soc_vs_time.png")
+    plt.savefig(plot_path, dpi=300)
+    logging.info("Saved State of Charge vs Time plot to %s", plot_path)
 
 
 def read_csv_data(filename: str) -> pd.DataFrame:
@@ -327,12 +393,24 @@ def main() -> None:
     df: pd.DataFrame = read_csv_data(CSV_FILENAME)
     discharge_df: pd.DataFrame = prepare_data(df)
 
-    # Generate plots
-    plot_voltage_vs_capacity(discharge_df)
-    plot_capacity_vs_time(discharge_df)
-    plot_temperature_vs_time(discharge_df)
+    # Create a figure with a 2x2 grid layout for all four plots
+    fig, axes = plt.subplots(2, 2, figsize=(12, 10), constrained_layout=True)
+    
+    # Generate plots using the grid layout
+    plot_voltage_vs_capacity(discharge_df, axes[0, 0])    # top-left
+    plot_capacity_vs_time(discharge_df, axes[0, 1])       # top-right
+    plot_temperature_vs_time(discharge_df, axes[1, 0])    # bottom-left
+    plot_soc_vs_time(discharge_df, axes[1, 1])            # bottom-right (new SoC plot)
 
-    # Display plots to the user
+    # Set a title for the entire figure
+    fig.suptitle('Battery Discharge Analysis', fontsize=16)
+    
+    # Save the combined figure
+    combined_plot_path: str = os.path.join(PLOT_DIRECTORY, "combined_plots.png")
+    plt.savefig(combined_plot_path, dpi=300)
+    logging.info("Saved combined plots to %s", combined_plot_path)
+
+    # Display all plots in a single window
     plt.show()
 
     logging.info("All plots generated and saved successfully.")
