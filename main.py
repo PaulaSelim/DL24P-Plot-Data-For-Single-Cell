@@ -1,7 +1,7 @@
 import logging
 import os
 from datetime import datetime
-from typing import Tuple
+from typing import Tuple, List, Dict
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -13,12 +13,16 @@ from scipy.interpolate import make_interp_spline
 load_dotenv()
 
 # Global configuration variables (configurable via environment variables)
-CSV_FILENAME: str = os.getenv("CSV_FILENAME", "0.5A.csv")
+# Changed from single CSV file to list of files
+CSV_FILENAMES: List[str] = os.getenv("CSV_FILENAMES", "processed_0.5C 21700.csv,processed_1C 21700.csv,processed_2C 21700.csv").split(",")
 PLOT_DIRECTORY: str = os.getenv("PLOT_DIRECTORY", "plots")
 MOVING_AVERAGE_DEFAULT_WINDOW: int = int(os.getenv("MOVING_AVERAGE_DEFAULT_WINDOW", "15"))
-RESAMPLE_REDUCTION_FACTOR: float = float(os.getenv("RESAMPLE_REDUCTION_FACTOR", "0.01"))
+RESAMPLE_REDUCTION_FACTOR: float = float(os.getenv("RESAMPLE_REDUCTION_FACTOR", "0.5"))
 SMOOTH_CURVE_POINTS: int = int(os.getenv("SMOOTH_CURVE_POINTS", "1000"))
-BATTERY_CAPACITY_AH: float = float(os.getenv("BATTERY_CAPACITY_AH", "2.5"))  # Default battery capacity in Ah
+BATTERY_CAPACITY_AH: float = float(os.getenv("BATTERY_CAPACITY_AH", "5"))  # Default battery capacity in Ah
+
+# Colors for different datasets in plots
+PLOT_COLORS: List[str] = ["b", "r", "g", "m", "c", "y", "k", "orange"]
 
 # Configure logging for detailed execution tracing
 logging.basicConfig(
@@ -349,37 +353,55 @@ def plot_soc_vs_time(discharge_df: pd.DataFrame, ax=None) -> None:
     logging.info("Saved State of Charge vs Time plot to %s", plot_path)
 
 
-def read_csv_data(filename: str) -> pd.DataFrame:
-    """Reads CSV data into a DataFrame.
+def read_csv_data(filenames: List[str]) -> Dict[str, pd.DataFrame]:
+    """Reads CSV data from multiple files into separate DataFrames.
 
     Args:
-        filename: Path to the CSV file.
+        filenames: List of paths to the CSV files.
 
     Returns:
-        A pandas DataFrame containing the CSV data.
+        A dictionary mapping filenames to their respective DataFrames.
     """
-    logging.info("Reading CSV file: %s", filename)
-    df: pd.DataFrame = pd.read_csv(filename)
-    return df
+    data_dict = {}
+    for filename in filenames:
+        logging.info("Reading CSV file: %s", filename)
+        try:
+            df = pd.read_csv(filename)
+            # Extract the base filename without path for use as label
+            base_name = os.path.basename(filename)
+            # Remove "processed_" prefix if it exists
+            if base_name.startswith("processed_"):
+                base_name = base_name[10:]
+            data_dict[base_name] = df
+            logging.info("Successfully read data from %s", filename)
+        except Exception as e:
+            logging.error("Failed to read file %s: %s", filename, str(e))
+    
+    logging.info("Read data from %d files.", len(data_dict))
+    return data_dict
 
 
-def prepare_data(df: pd.DataFrame) -> pd.DataFrame:
-    """Prepares and filters the DataFrame for plotting.
+def prepare_data(data_dict: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:
+    """Prepares and filters multiple DataFrames for plotting.
 
-    Converts time strings to seconds and filters the DataFrame for active discharge data.
+    Converts time strings to seconds and filters each DataFrame for active discharge data.
 
     Args:
-        df: The original DataFrame read from the CSV file.
+        data_dict: Dictionary mapping filenames to their DataFrames.
 
     Returns:
-        Filtered DataFrame containing data where discharge is active.
+        Dictionary with filtered DataFrames containing data where discharge is active.
     """
-    logging.info("Converting time to seconds.")
-    df["time_seconds"] = df["time"].apply(time_to_seconds)
-    # Filter rows where discharge is active (is_on == 1.0)
-    filtered_df: pd.DataFrame = df[df["is_on"] == 1.0].copy()
-    logging.info("Filtered data to %d active discharge rows.", len(filtered_df))
-    return filtered_df
+    filtered_dict = {}
+    for label, df in data_dict.items():
+        logging.info(f"Converting time to seconds for dataset: {label}")
+        df["time_seconds"] = df["time"].apply(time_to_seconds)
+        # Filter rows where discharge is active (is_on == 1.0)
+        filtered_df = df[df["is_on"] == 1.0].copy()
+        logging.info(f"Filtered data for {label} to {len(filtered_df)} active discharge rows.")
+        filtered_dict[label] = filtered_df
+    
+    return filtered_dict
 
 
 def main() -> None:
@@ -389,31 +411,290 @@ def main() -> None:
     # Ensure plot directory exists
     ensure_plot_directory()
 
-    # Read and prepare the data
-    df: pd.DataFrame = read_csv_data(CSV_FILENAME)
-    discharge_df: pd.DataFrame = prepare_data(df)
-
-    # Create a figure with a 2x2 grid layout for all four plots
-    fig, axes = plt.subplots(2, 2, figsize=(12, 10), constrained_layout=True)
+    # Read and prepare the data from multiple CSV files
+    data_dict = read_csv_data(CSV_FILENAMES)
+    filtered_data_dict = prepare_data(data_dict)
     
-    # Generate plots using the grid layout
-    plot_voltage_vs_capacity(discharge_df, axes[0, 0])    # top-left
-    plot_capacity_vs_time(discharge_df, axes[0, 1])       # top-right
-    plot_temperature_vs_time(discharge_df, axes[1, 0])    # bottom-left
-    plot_soc_vs_time(discharge_df, axes[1, 1])            # bottom-right (new SoC plot)
+    logging.info(f"Successfully loaded and prepared {len(filtered_data_dict)} datasets.")
 
-    # Set a title for the entire figure
-    fig.suptitle('Battery Discharge Analysis', fontsize=16)
+    # Generate individual multi-dataset plots
+    plot_voltage_vs_capacity_multi(filtered_data_dict)
+    plot_capacity_vs_time_multi(filtered_data_dict)
+    plot_temperature_vs_time_multi(filtered_data_dict)
+    plot_soc_vs_time_multi(filtered_data_dict)
     
-    # Save the combined figure
-    combined_plot_path: str = os.path.join(PLOT_DIRECTORY, "combined_plots.png")
-    plt.savefig(combined_plot_path, dpi=300)
-    logging.info("Saved combined plots to %s", combined_plot_path)
+    # Generate combined multi-dataset plot
+    plot_combined_multi_datasets(filtered_data_dict)
+
+    logging.info("All multi-dataset plots generated and saved successfully.")
+    
+    # For backward compatibility, if only one CSV file is specified,
+    # also generate the original single-dataset plots
+    if len(filtered_data_dict) == 1:
+        logging.info("Only one dataset specified, also generating single-dataset plots.")
+        discharge_df = next(iter(filtered_data_dict.values()))
+        
+        # Create a figure with a 2x2 grid layout for all four single-dataset plots
+        fig, axes = plt.subplots(2, 2, figsize=(12, 10), constrained_layout=True)
+        
+        # Generate plots using the grid layout
+        plot_voltage_vs_capacity(discharge_df, axes[0, 0])    # top-left
+        plot_capacity_vs_time(discharge_df, axes[0, 1])       # top-right
+        plot_temperature_vs_time(discharge_df, axes[1, 0])    # bottom-left
+        plot_soc_vs_time(discharge_df, axes[1, 1])            # bottom-right
+        
+        # Set a title for the entire figure
+        fig.suptitle('Battery Discharge Analysis - Single Dataset', fontsize=16)
+        
+        # Save the combined figure
+        combined_plot_path = os.path.join(PLOT_DIRECTORY, "combined_plots.png")
+        plt.savefig(combined_plot_path, dpi=300)
+        logging.info("Saved single-dataset combined plots to %s", combined_plot_path)
 
     # Display all plots in a single window
     plt.show()
 
-    logging.info("All plots generated and saved successfully.")
+    logging.info("Program completed successfully.")
+
+
+def plot_voltage_vs_capacity_multi(data_dict: Dict[str, pd.DataFrame], save=True) -> plt.Figure:
+    """Generates a plot of voltage versus discharge capacity for multiple datasets.
+
+    Args:
+        data_dict: Dictionary mapping dataset labels to their DataFrames.
+        save: Whether to save the plot to a file.
+
+    Returns:
+        The matplotlib Figure object.
+    """
+    logging.info("Generating multi-dataset Voltage vs Discharge Capacity plot.")
+    
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    for i, (label, df) in enumerate(data_dict.items()):
+        color = PLOT_COLORS[i % len(PLOT_COLORS)]
+        
+        x_capacity = df["cap_ah"].values
+        y_voltage = df["voltage"].values
+        
+        # Smooth the data with moving average and resampling
+        x_smoothed, y_smoothed = apply_moving_average(x_capacity, y_voltage)
+        x_sampled, y_sampled = resample_data(x_smoothed, y_smoothed)
+        
+        ax.plot(x_sampled, y_sampled, color=color, linewidth=2, label=label)
+    
+    ax.set_xlabel("Discharge Capacity (Ah)", fontsize=12)
+    ax.set_ylabel("Voltage (V)", fontsize=12)
+    ax.set_title("Voltage vs Discharge Capacity", fontsize=14)
+    ax.grid(True)
+    ax.legend(loc='best')
+    
+    if save:
+        plot_path = os.path.join(PLOT_DIRECTORY, "voltage_vs_capacity_multi.png")
+        plt.savefig(plot_path, dpi=300)
+        logging.info("Saved multi-dataset Voltage vs Capacity plot to %s", plot_path)
+    
+    return fig
+
+
+def plot_capacity_vs_time_multi(data_dict: Dict[str, pd.DataFrame], save=True) -> plt.Figure:
+    """Generates a plot of discharge capacity versus time for multiple datasets.
+
+    Args:
+        data_dict: Dictionary mapping dataset labels to their DataFrames.
+        save: Whether to save the plot to a file.
+
+    Returns:
+        The matplotlib Figure object.
+    """
+    logging.info("Generating multi-dataset Discharge Capacity vs Time plot.")
+    
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    for i, (label, df) in enumerate(data_dict.items()):
+        color = PLOT_COLORS[i % len(PLOT_COLORS)]
+        
+        x_time = df["time_seconds"].values
+        y_capacity = df["cap_ah"].values
+        
+        # Smooth the data with moving average and resampling
+        x_smoothed, y_smoothed = apply_moving_average(x_time, y_capacity)
+        x_sampled, y_sampled = resample_data(x_smoothed, y_smoothed)
+        
+        ax.plot(x_sampled, y_sampled, color=color, linewidth=2, label=label)
+    
+    ax.set_xlabel("Time (seconds)", fontsize=12)
+    ax.set_ylabel("Discharge Capacity (Ah)", fontsize=12)
+    ax.set_title("Discharge Capacity vs Time", fontsize=14)
+    ax.grid(True)
+    ax.legend(loc='best')
+    
+    if save:
+        plot_path = os.path.join(PLOT_DIRECTORY, "capacity_vs_time_multi.png")
+        plt.savefig(plot_path, dpi=300)
+        logging.info("Saved multi-dataset Capacity vs Time plot to %s", plot_path)
+    
+    return fig
+
+
+def plot_temperature_vs_time_multi(data_dict: Dict[str, pd.DataFrame], save=True) -> plt.Figure:
+    """Generates a plot of temperature versus time for multiple datasets.
+
+    Args:
+        data_dict: Dictionary mapping dataset labels to their DataFrames.
+        save: Whether to save the plot to a file.
+
+    Returns:
+        The matplotlib Figure object.
+    """
+    logging.info("Generating multi-dataset Temperature vs Time plot.")
+    
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    for i, (label, df) in enumerate(data_dict.items()):
+        color = PLOT_COLORS[i % len(PLOT_COLORS)]
+        
+        x_time = df["time_seconds"].values
+        y_temperature = df["temp"].values
+        
+        # Smooth the data with moving average and resampling
+        x_smoothed, y_smoothed = apply_moving_average(x_time, y_temperature)
+        x_sampled, y_sampled = resample_data(x_smoothed, y_smoothed)
+        
+        ax.plot(x_sampled, y_sampled, color=color, linewidth=2, label=label)
+    
+    ax.set_xlabel("Time (seconds)", fontsize=12)
+    ax.set_ylabel("Temperature (°C)", fontsize=12)
+    ax.set_title("Temperature vs Time", fontsize=14)
+    ax.grid(True)
+    ax.legend(loc='best')
+    
+    if save:
+        plot_path = os.path.join(PLOT_DIRECTORY, "temperature_vs_time_multi.png")
+        plt.savefig(plot_path, dpi=300)
+        logging.info("Saved multi-dataset Temperature vs Time plot to %s", plot_path)
+    
+    return fig
+
+
+def plot_soc_vs_time_multi(data_dict: Dict[str, pd.DataFrame], save=True) -> plt.Figure:
+    """Generates a plot of State of Charge versus time for multiple datasets.
+
+    Args:
+        data_dict: Dictionary mapping dataset labels to their DataFrames.
+        save: Whether to save the plot to a file.
+
+    Returns:
+        The matplotlib Figure object.
+    """
+    logging.info("Generating multi-dataset State of Charge vs Time plot.")
+    
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    for i, (label, df) in enumerate(data_dict.items()):
+        color = PLOT_COLORS[i % len(PLOT_COLORS)]
+        
+        x_time = df["time_seconds"].values
+        # Calculate SoC as percentage: (current charge / total capacity) * 100
+        y_soc = (1 - (df["cap_ah"].values / BATTERY_CAPACITY_AH)) * 100
+        
+        # Smooth the data with moving average and resampling
+        x_smoothed, y_smoothed = apply_moving_average(x_time, y_soc)
+        x_sampled, y_sampled = resample_data(x_smoothed, y_smoothed)
+        
+        ax.plot(x_sampled, y_sampled, color=color, linewidth=2, label=label)
+    
+    ax.set_xlabel("Time (seconds)", fontsize=12)
+    ax.set_ylabel("State of Charge (%)", fontsize=12)
+    ax.set_title("Battery State of Charge vs Time", fontsize=14)
+    ax.grid(True)
+    ax.legend(loc='best')
+    
+    if save:
+        plot_path = os.path.join(PLOT_DIRECTORY, "soc_vs_time_multi.png")
+        plt.savefig(plot_path, dpi=300)
+        logging.info("Saved multi-dataset State of Charge vs Time plot to %s", plot_path)
+    
+    return fig
+
+
+def plot_combined_multi_datasets(data_dict: Dict[str, pd.DataFrame]) -> plt.Figure:
+    """Creates a 2x2 grid of all plots for multiple datasets.
+    
+    Args:
+        data_dict: Dictionary mapping dataset labels to their DataFrames.
+        
+    Returns:
+        The matplotlib Figure object.
+    """
+    logging.info("Generating combined plot with all datasets.")
+    
+    fig, axes = plt.subplots(2, 2, figsize=(15, 12), constrained_layout=True)
+    
+    # Counter for assigning consistent colors across all plots
+    for i, (label, df) in enumerate(data_dict.items()):
+        color = PLOT_COLORS[i % len(PLOT_COLORS)]
+        
+        # Voltage vs Capacity (top-left)
+        x_capacity = df["cap_ah"].values
+        y_voltage = df["voltage"].values
+        x_smoothed, y_smoothed = apply_moving_average(x_capacity, y_voltage)
+        x_sampled, y_sampled = resample_data(x_smoothed, y_smoothed)
+        axes[0, 0].plot(x_sampled, y_sampled, color=color, linewidth=2, label=label)
+        
+        # Capacity vs Time (top-right)
+        x_time = df["time_seconds"].values
+        y_capacity = df["cap_ah"].values
+        x_smoothed, y_smoothed = apply_moving_average(x_time, y_capacity)
+        x_sampled, y_sampled = resample_data(x_smoothed, y_smoothed)
+        axes[0, 1].plot(x_sampled, y_sampled, color=color, linewidth=2, label=label)
+        
+        # Temperature vs Time (bottom-left)
+        y_temperature = df["temp"].values
+        x_smoothed, y_smoothed = apply_moving_average(x_time, y_temperature)
+        x_sampled, y_sampled = resample_data(x_smoothed, y_smoothed)
+        axes[1, 0].plot(x_sampled, y_sampled, color=color, linewidth=2, label=label)
+        
+        # SoC vs Time (bottom-right)
+        y_soc = (1 - (df["cap_ah"].values / BATTERY_CAPACITY_AH)) * 100
+        x_smoothed, y_smoothed = apply_moving_average(x_time, y_soc)
+        x_sampled, y_sampled = resample_data(x_smoothed, y_smoothed)
+        axes[1, 1].plot(x_sampled, y_sampled, color=color, linewidth=2, label=label)
+    
+    # Customize each subplot
+    axes[0, 0].set_xlabel("Discharge Capacity (Ah)")
+    axes[0, 0].set_ylabel("Voltage (V)")
+    axes[0, 0].set_title("Voltage vs Discharge Capacity")
+    axes[0, 0].grid(True)
+    axes[0, 0].legend(loc='best')
+    
+    axes[0, 1].set_xlabel("Time (seconds)")
+    axes[0, 1].set_ylabel("Discharge Capacity (Ah)")
+    axes[0, 1].set_title("Discharge Capacity vs Time")
+    axes[0, 1].grid(True)
+    axes[0, 1].legend(loc='best')
+    
+    axes[1, 0].set_xlabel("Time (seconds)")
+    axes[1, 0].set_ylabel("Temperature (°C)")
+    axes[1, 0].set_title("Temperature vs Time")
+    axes[1, 0].grid(True)
+    axes[1, 0].legend(loc='best')
+    
+    axes[1, 1].set_xlabel("Time (seconds)")
+    axes[1, 1].set_ylabel("State of Charge (%)")
+    axes[1, 1].set_title("Battery State of Charge vs Time")
+    axes[1, 1].grid(True)
+    axes[1, 1].legend(loc='best')
+    
+    # Set a title for the entire figure
+    fig.suptitle('Battery Discharge Analysis - Multiple Datasets', fontsize=16)
+    
+    # Save the combined figure
+    plot_path = os.path.join(PLOT_DIRECTORY, "combined_plots_multi.png")
+    plt.savefig(plot_path, dpi=300)
+    logging.info("Saved combined multi-dataset plots to %s", plot_path)
+    
+    return fig
 
 
 if __name__ == "__main__":
