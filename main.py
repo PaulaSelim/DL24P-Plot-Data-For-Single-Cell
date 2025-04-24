@@ -14,7 +14,7 @@ load_dotenv()
 
 # Global configuration variables (configurable via environment variables)
 # Changed from single CSV file to list of files
-CSV_FILENAMES: List[str] = os.getenv("CSV_FILENAMES", "processed_0.5C 21700.csv,processed_1C 21700.csv,processed_2C 21700.csv").split(",")
+CSV_FILENAMES: List[str] = os.getenv("CSV_FILENAMES", "0.5C 21700.csv,processed_1C 21700.csv,processed_2C 21700.csv").split(",")
 PLOT_DIRECTORY: str = os.getenv("PLOT_DIRECTORY", "plots")
 MOVING_AVERAGE_DEFAULT_WINDOW: int = int(os.getenv("MOVING_AVERAGE_DEFAULT_WINDOW", "15"))
 RESAMPLE_REDUCTION_FACTOR: float = float(os.getenv("RESAMPLE_REDUCTION_FACTOR", "0.5"))
@@ -439,9 +439,9 @@ def main() -> None:
         
         # Generate plots using the grid layout
         plot_voltage_vs_capacity(discharge_df, axes[0, 0])    # top-left
-        plot_capacity_vs_time(discharge_df, axes[0, 1])       # top-right
+        plot_soc_vs_time(discharge_df, axes[0, 1])           # top-right (switched with capacity vs time)
         plot_temperature_vs_time(discharge_df, axes[1, 0])    # bottom-left
-        plot_soc_vs_time(discharge_df, axes[1, 1])            # bottom-right
+        plot_capacity_vs_time(discharge_df, axes[1, 1])       # bottom-right (switched with soc vs time)
         
         # Set a title for the entire figure
         fig.suptitle('Battery Discharge Analysis - Single Dataset', fontsize=16)
@@ -642,10 +642,10 @@ def plot_combined_multi_datasets(data_dict: Dict[str, pd.DataFrame]) -> plt.Figu
         x_sampled, y_sampled = resample_data(x_smoothed, y_smoothed)
         axes[0, 0].plot(x_sampled, y_sampled, color=color, linewidth=2, label=label)
         
-        # Capacity vs Time (top-right)
+        # SoC vs Time (top-right) - Switched with Capacity vs Time
         x_time = df["time_seconds"].values
-        y_capacity = df["cap_ah"].values
-        x_smoothed, y_smoothed = apply_moving_average(x_time, y_capacity)
+        y_soc = (1 - (df["cap_ah"].values / BATTERY_CAPACITY_AH)) * 100
+        x_smoothed, y_smoothed = apply_moving_average(x_time, y_soc)
         x_sampled, y_sampled = resample_data(x_smoothed, y_smoothed)
         axes[0, 1].plot(x_sampled, y_sampled, color=color, linewidth=2, label=label)
         
@@ -655,9 +655,9 @@ def plot_combined_multi_datasets(data_dict: Dict[str, pd.DataFrame]) -> plt.Figu
         x_sampled, y_sampled = resample_data(x_smoothed, y_smoothed)
         axes[1, 0].plot(x_sampled, y_sampled, color=color, linewidth=2, label=label)
         
-        # SoC vs Time (bottom-right)
-        y_soc = (1 - (df["cap_ah"].values / BATTERY_CAPACITY_AH)) * 100
-        x_smoothed, y_smoothed = apply_moving_average(x_time, y_soc)
+        # Capacity vs Time (bottom-right) - Switched with SoC vs Time
+        y_capacity = df["cap_ah"].values
+        x_smoothed, y_smoothed = apply_moving_average(x_time, y_capacity)
         x_sampled, y_sampled = resample_data(x_smoothed, y_smoothed)
         axes[1, 1].plot(x_sampled, y_sampled, color=color, linewidth=2, label=label)
     
@@ -668,9 +668,10 @@ def plot_combined_multi_datasets(data_dict: Dict[str, pd.DataFrame]) -> plt.Figu
     axes[0, 0].grid(True)
     axes[0, 0].legend(loc='best')
     
+    # Updated titles and labels after switching positions
     axes[0, 1].set_xlabel("Time (seconds)")
-    axes[0, 1].set_ylabel("Discharge Capacity (Ah)")
-    axes[0, 1].set_title("Discharge Capacity vs Time")
+    axes[0, 1].set_ylabel("State of Charge (%)")
+    axes[0, 1].set_title("Battery State of Charge vs Time")
     axes[0, 1].grid(True)
     axes[0, 1].legend(loc='best')
     
@@ -680,9 +681,10 @@ def plot_combined_multi_datasets(data_dict: Dict[str, pd.DataFrame]) -> plt.Figu
     axes[1, 0].grid(True)
     axes[1, 0].legend(loc='best')
     
+    # Updated titles and labels after switching positions
     axes[1, 1].set_xlabel("Time (seconds)")
-    axes[1, 1].set_ylabel("State of Charge (%)")
-    axes[1, 1].set_title("Battery State of Charge vs Time")
+    axes[1, 1].set_ylabel("Discharge Capacity (Ah)")
+    axes[1, 1].set_title("Discharge Capacity vs Time")
     axes[1, 1].grid(True)
     axes[1, 1].legend(loc='best')
     
